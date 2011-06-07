@@ -1,0 +1,703 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="GENERATOR" content="Microsoft FrontPage 4.0">
+   <title>CS 372 Spring 2010: Project 3</title>
+</head>
+<body bgcolor="#FFFFFF">
+
+<center>
+<h2>
+CS372 Project 3 - A Network Scheduler</h2></center>
+
+<center><b>Due:</b>&nbsp; February 25 2011 5:59:59 PM</center>
+
+<HR>
+<ul>
+
+<h3>
+Assignment Goals</h3>
+
+<ul>
+<li>
+To gain experience in writing and debugging multithreaded
+code.</li>
+
+<li>
+To make use of common synchronization primitives such as
+locks and condition variables.</li>
+
+<li>
+Learn an important, sophisticated scheduling algorithm: start time fair
+queuing (STFQ).</li>
+</ul>
+
+<h3>
+Overview of Project</h3>
+
+<blockquote>You will construct and evaluate a proportional-share network
+  scheduler.&nbsp; In particular, you will</blockquote>
+
+<ul>
+<li>
+Create a network send and receive scheduler that limits the maximum aggregate
+rate at which a set of streams can send or receive</li>
+
+<li>
+Create a network send scheduler and receive scheduler that divides specified
+fractions of send and receive bandwidth among different network streams.</li>
+
+
+</ul>
+
+<ul>
+
+<li>
+Evaluate the performance of your scheduler.</li>
+
+</ul>
+
+<blockquote>&nbsp;
+  <p>We have provided you with a simple framework&nbsp; to help you get started. You will not have to write too many lines
+of new code. Therefore, focus your attention on developing a clean design
+and learning good concurrent programming techniques.</p>
+  </blockquote>
+
+<h3>
+Background</h3>
+
+<blockquote>When sending and receiving data on a network, most of the time the
+  underlying network does a good job at splitting bandwidth fairly across
+  connections. But, in some cases, it is desirable to limit the rate at which a
+  flow or group of flows sends or to split bandwidth proportionally across
+  flows. For example, if you were receiving a large file across a modem using
+  FTP while also trying to surf the web across the modem, you might want to
+  limit the FTP transfers to 1000 bytes/second so that the rest of the bandwidth
+  can be used to give good interactive response time for your web surfing.
+  <p>In this assignment, you will be given the source code for simple,
+  unscheduled network streams for sending and receiving data. Your goal is to
+  extend these streams to make use of NWScheduler objects you develop in
+  order to schedule network bandwidth across different streams in various ways.</p>
+  </blockquote>
+
+<h3>
+A Quick Introduction to C++
+</h3>
+<blockquote>
+<p>The <b>right</b> way to think of shared sate is as shared objects. We're
+therefore going to use C++, C's object-oriented descendent, for this
+project. 
+</p>
+
+<p>Don't worry. For the subset of C++ relevant to this project, the
+learning curve will be short (especially assuming you
+already know Java.) Furthermore, I will provide template code to
+which you will add the details; this should largely insulate you from
+having to learn much C++ syntax.
+</p>
+
+<p>Read <A HREF="c++.pdf">A Quick Introduction to C++</A>, and you should
+be good to go. Note that this document was written over a decade ago,
+so a few of the comments on the state of standards and tools are a bit
+out of date (for example, the document warns against using C++ templates
+because debuggers didn't understand them well back then; this warning
+is much less applicable today.) Nonetheless, it provides a good, quick
+overview of the key ideas to use (and some issues/pitfalls to avoid.)
+</p>
+
+
+  </blockquote>
+
+<h3>
+Working with threads</h3>
+
+<blockquote>Before you begin the assignment, read <a href="http://www.cs.utexas.edu/users/dahlin/Classes/UGOS/reading/programming-with-threads.pdf">Coding
+Standards for Programming with Threads</a>.&nbsp; <b><i>You are required
+to follow these standards for this project</i></b>. Because it is impossible
+to determine the correctness of a multithreaded programming via testing,
+<b><i>grading on this project will primarily be based on reading your code
+not by running tests.</i></b> Your code must be clear and concise. If your
+code is not easy to understand, then your grade will be poor, even if the
+program seems to work. In the real world, unclear multi-threaded code is
+extremely dangerous -- even if it "works" when you write it, how will the
+programmer who comes after you debug it, maintain it, or add new features?
+Feel free to sit down with the TA or instructor during office hours for code inspections
+before you turn in your project (note: to take advantage of this,&nbsp;
+start early!)
+</blockquote>
+
+<blockquote><font color="#000000">To simplify your task,
+we have developed a simple thread package on top of the standard pthread
+package for your use. The idea is to shield you from the irrelevant detail
+that inevitably is part of dealing with pthreads. This way, you use the
+standard package but you also focus on the project at hand.</font>
+<p>The files are 
+<a href="http://www.cs.utexas.edu/users/dahlin/Classes/UGOS/labs/labT/sthread.h">sthread.h</a>,
+<a href="http://www.cs.utexas.edu/users/dahlin/Classes/UGOS/labs/labT/sthread.cc">sthread.cc</a>, and a simple 
+<a href="http://www.cs.utexas.edu/users/dahlin/Classes/UGOS/labs/labT/main.cc">main.cc</a> program
+</a>that demonstrates
+their use.
+<p><font color="#000000">Files to be included in your .cc
+files: sthread.h</font>
+<br><font color="#000000">Files to be linked with your .o
+files: sthread.o (compiled from sthread.cc)</font>
+<br><font color="#000000">Other required compiler options
+(when compiling .cc files): -D_POSIX_PTHREAD_SEMANTICS</font>
+<br><font color="#000000">Other required linking options
+(when linking .o files):&nbsp; -lpthread -lrt</font>
+<p><font color="#330000">The package provides threads, mutex
+locks, and condition variables as well as some other utility functions
+that you may need. This package is
+built on the posix thread library. For more information, see the man pages
+for the library functions used in the sthread.cc code.</font></blockquote>
+
+<h3>
+Getting started</h3>
+
+<blockquote>Before you begin the assignment, grab the following
+code: <a href="http://www.cs.utexas.edu/users/dahlin/Classes/UGOS/labs/labT.tar">labT.tar</a>
+<p>This tar archive contains the source code to the unscheduled InputStream and
+OutputStream&nbsp; server that you will modify and/or extend, as well as some other files that we will describe
+below. To extract the files from the archive, use the following command.
+<blockquote><tt>tar -xvf labT.tar</tt></blockquote>
+  A directory called <b><tt>labT/</tt></b> will be created,
+and your files will be extracted into it. You should be able to <b>make</b> the
+  code in that directory on a Linux host. Then, you should be able to run a
+  simple test by running the following commands in two windows (on one or two
+  machines):
+  <blockquote>
+    <p>machine1.cs.utexas.edu&gt; receiver 5000</p>
+    <p>machine2.cs.utexas.edu&gt; sender machine1.cs.utexas.edu 5000 5</p>
+  </blockquote>
+<p>We have provided a large amount of code to form the backbone
+of your project. You should have to write relatively few lines of code
+yourself. But, you must think carefully about the code that you do write
+because debugging incorrect multi-threaded code
+  is <i><b><u>hard</u></b></i>.</blockquote>
+
+<blockquote>
+<p>
+Become familiar with the code we provided.
+<UL>
+<LI>sthread.cc, sthread.h -- simplified thread library</LI>
+<LI>receiver.cc, sender.cc, InputStream.cc, InputStream.h,
+  OutputStream.cc, OutputStream.h -- simple unscheduled send/receive
+  code</LI>
+<LI>ScheduledInputStream.cc, ScheduledInputStream.h,
+  ScheduledOutputStream.cc, ScheduledOutputStream.h, NWScheduler.h,
+  NWScheduler.cc, MaxNWScheduler.h, MaxNWScheduler.cc,
+  STFQNWScheduler.h, STFQNWScheduler.cc  -- incomplete code
+  for scheduling input/output streams</LI>
+<LI>Stats.cc -- incomplete code for tracking statistics</LI>
+<LI>util.cc, util.h, common.c, common.h -- some utilities and other
+				 potentially useful code</LI>
+ <LI>unit.cc -- some unit tests</LI>
+ <LI>SocketLibrary/* -- wrappers around lower-level libraries for
+ network communication</LI>
+</UL>
+</p>
+
+</blockquote>
+
+<h3>Hint: etags</h3>
+<blockquote>
+One of the skills a programmer must have is the ability to quickly 
+understand a body of existing code written by others. 
+
+
+</blockquote>
+
+<blockquote>
+<p>
+Etags is a really useful tool to let you navigate among a group of
+source files.  Type "make etags"; this will create an index of the
+source files. Now, open one of the files, say <TT>receiver.cc</TT> in
+emacs and move your cursor to the name of some interesting function,
+say <tt>saccept()</tt>. Where is this function defined? You can use
+etags to find out. While the cursor is on that function name, type 
+		 <tt>M-.</tt> (that's <tt> meta-key .</tt>
+		 normally <tt>esc</tt> then <tt>.</tt>); it will ask
+		 you the name of the function you want to find (and
+		 guess the right one) so hit return; (it may also ask
+		 you what TAGS file to use and guess the right one; if
+		 so, hit return again). Voila. You are now looking at
+		 the code that defines that function. 
+</p>
+</blockquote>
+
+<blockquote>
+<p>
+<tt>M-.</tt> is about 99% of what you need to know about
+etags. <tt>M-,</tt> and <tt>M-*</tt> are also useful. Here's
+a <A HREF="http://tulrich.com/geekstuff/emacs.html">cheat sheet.</A>
+</p>
+</blockquote>
+
+
+<blockquote>
+<p>
+As an alternative to etags, many IDE (integrated development
+environments) such as eclipse provide similar (and more sophisticated)
+ways to navigate through code, find where functions are defined,
+etc. If you are already using an IDE, then you probably don't need to
+worry about etags. Of course <A HREF="http://xkcd.com/378/">real
+    programmers use emacs.</A>
+</p>
+</blockquote>
+
+
+
+<h3><b>Hint</b></h3>
+
+<blockquote><p>Years ago, my driver education teacher had the exercise of asking
+  the person driving the demo car to find some obscure street in the neighborhood. The point was to
+  put some cognitive load on the driver so s/he could not entirely concentrate
+  on driving and thereby reveal something about how the driver is likely to
+  drive when s/he doesn't have an instructor sitting in the car. This project
+  has something of that flavor -- the semantics of the objects I am asking you
+  to build are designed to make you think a bit about them while you are also
+  trying to write multi-threaded code. Don't let this trick fool you! Once you
+  think about the specifications a bit, I hope you will realize that the
+  structure of the synchronization can be quite simple if you cleanly structure
+  your system. All of the parts of this project are designed to be simple once
+  you have thought carefully about the design. If the design seems complex,
+  don't start writing code---work on simplifying your design (the last comment
+  is good advice for any project.)</blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Important note</font></nobr></b></td>
+</tr>
+</table>
+
+<blockquote>
+
+<p>
+You <b>must</b> follow the restrictive coding standards specified. As I
+described in class, there are specific reasons for these rules: I believe that
+if you follow these rules, you are very likely to learn to write good
+multi-threaded code. Conversely, if you violate these rules, I fear that you may
+not learn this material as well. Code that fails to conform to these rules is
+incorrect and will receive significant little credit when this lab is graded.
+</p>
+
+
+</blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Part 1: Basic
+  synchronization</font></nobr></b></td>
+</tr>
+</table>
+
+<blockquote>
+
+<p>
+We have provided the skeleton of class Stats.
+For part 1 of the project, your job is to complete its implementation.&nbsp;
+</p>
+
+<p>
+Update the state member variables, synchronization member variables,
+constructor, update(), and print() functions to write thread safe code. The
+basic idea is for update() to keep track of how many bytes each flow (typically
+a thread) has sent. Then, when toString() is called, the object
+produces a string of numbers
+ with the ith number  showing the
+number of bytes the ith stream sent since the last call to toString(), 
+and the last column
+shows the total bandwidth across all flows since the last call to toString().
+</p>
+
+<p>
+E.g., if there were four flows, each sending about 1mbyte/s for 10
+seconds
+and we call toString() each second, the
+sequence of strings returned might look something like this:
+</p>
+
+<p>
+1000000 990000 1100000 1000000 4000000<br>
+900000 1200000 950000 950000 4000000<br>
+1111111 999999 1013321 942222 4066653<br>
+...<br>
+966787 944921 1233211 1033254&nbsp;&nbsp; 4178173
+</p>
+
+<p>
+The source code provides more details.
+</p>
+
+<p>
+Run "make plot1.pdf", which
+runs the demo/test defined in sendAndRecv.cc, redirecting the output to a file called
+data1; it then uses <a href="plot1.gnuplot">plot1.gnuplot</a>
+to plot the output to the file plot1.pdf.&nbsp;  You can view the file
+with acroread. E.g., 
+</p>
+
+<p>
+<font face="6x13">
+&gt; make plot1.pdf <br>
+&gt; acroread plot1.pdf</font>
+</p>
+
+<p><b>Note</b>: If you add any code that prints to stdout, having each line
+begin with &quot;#&quot; will cause it to be treated as a comment by gnuplot.
+</p>
+
+  <p>Remember to follow the coding standards!
+</p>
+
+  <p>P.S., Did I remind you to follow the coding standards?
+</p>
+
+</blockquote>
+
+
+
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Part 2: Build a
+  simple rate-limiting network scheduler</font></nobr></b></td>
+</tr>
+</table>
+
+<blockquote>Your next task is to design, implement, and test simple
+ ScheduledOutputStream and NWScheduler abstractions. The
+  ScheduledOutputStream classes should extend the
+  InputStream and OutputStream classes we have given you.
+
+  <p>ScheduledOutputStream's key method is <b>write(char *buffer, int len)</b>
+  which sends an array of bytes across the network. 
+  ScheduledOutputStream's writes interact with a NWScheduler object shared
+  by many ScheduledOutputStreams so that a write call puts its data into the
+  underlying socket and returns only when it is its turn to do so. For
+  this part of the project, you will 
+  ensure that there is a maximum total rate of writes
+  across all sockets in your system. </p>
+
+  <p>For part 2, the MaxNWScheduler, which extends class NWScheduler, implements
+  a simple policy. A maximum send rate in bytes per second is specified to the
+  MaxNWScheduler in its constructor, and the total rate of sends 
+  across all streams sharing a scheduler must never exceed that specified rate.
+  In other words, if a send <i>s0</i> transmits its data on the underlying
+  socket at time <i>t0</i> and transmits <i>b0</i> bytes, and the maximum rate
+  is <i>m</i>, then the next send <i>s1</i> must not send its data to the
+  underlying socket before time <i>t1 &gt;= t0 + b0/m</i>. Note that this
+  constraint should be met if <i>s0</i> and <i>s1</i> are sends by the same
+  thread on the same stream, if <i>s0</i> and <i>s1</i> are sends by different
+  threads on the same stream, if <i>s0</i> and <i>s1</i> are sends by different
+  threads on different streams, or if <i>s0</i> and <i>s1</i> are sends by the
+  same thread on different streams, so the NWScheduler should be shared across
+  all streams in a process so it can coordinate them.</p>
+  <p><b>Important note</b>: in class we warned you not to use sleep() except in
+  rare circumstances. For most of the synchronization in this project, you will
+  use wait(), but there is a place where you will have to use sthread_sleep():
+  after a buffer is sent, no other buffers can be sent until size/bandwidth
+  seconds have passed. Since this time is a specific time interval, you will
+  need to have one of your threads delay for this time interval by sleeping. You
+  are <b>required</b> to structure your program so that there is one and only
+  one thread that ever calls sleep. This <i>alarm thread</i> will coordinate
+  with all of your other threads via a synchronized shared object. When you want
+  to wake a non-alarm-thread up at a specific time, that thread will call a
+  method on the shared object and wait(), and at the specified time the alarm thread will call another
+  method on the shared object that will signal(). (Part 1 of this project is simple enough that you
+  could conceivably structure the program in other ways, but the main goal of
+  part 1 is to prepare you for part 2, which is too complex for other such
+  ad-hoc approaches, so you are <b> required</b> to follow this structure throughout the
+  design.)</p>
+  <p>In part 2, you should do the following</p>
+  <ol>
+    <li>Modify ScheduledOutputStream 
+      and MaxNWScheduler to meet the rules listed above. You probably
+      won't have to modify the base  NWScheduler or
+      OutputStream classes.</li>
+    <li>Test your system. Once you've implemented this code, <I>make
+      plot2.pdf</I> and <I>make plot2b.pdf</I> should work. Verify that the results of this
+      experiment make sense.
+      
+      <p>You must implement and run other tests of your choosing to evaluate this
+      algorithm in general and your implementation in particular. The code you
+      turn in should include these tests, and the final report should include a
+      discussion of these tests and results (possibly including graphs.)</p>
+      <p>I would suggest using gnuplot for graphing since you can set up scripts
+      to automatically run your send and receive programs, pipe their output to
+      a file, post-process the file (e.g., using the awk program), and create a
+      plot. Try <i>make plot2.pdf</i> for an example.&nbsp; But you are welcome do do all of this manually and use a spreadsheet
+      program instead.</li>
+  </ol>
+  </blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Part 3: Build a
+  STFQ network scheduler</font></nobr></b></td>
+</tr>
+</table>
+
+<blockquote>The rate limiting scheduler limits the total amount of bandwidth
+  consumed, but it doesn't guarantee anything about what fraction of bandwidth
+  each stream gets. What if you want to guarantee that all streams get equal
+  amounts of bandwidth?&nbsp; What if you want to give one stream 10x the
+  bandwidth of another one?
+  <p>One way to do this would be to use separate schedulers for different
+  streams. If you have a total of 10,000 bytes/s of bandwidth and want to evenly
+  divide it across two streams, you could create two NWSchedulers each of which
+  limits its stream to 5,000 bytes/second. There are two problems with this
+  approach: (1) If the number of streams sharing the 10,000 bytes changes over
+  time, we want to change the allocations to each stream accordingly; (2) If one
+  of the threads ends up needing to use less than its full 5,000 bytes/second,
+  we want to let the other one use the spare capacity (that is, we want a <i>work
+  conserving</i> scheduler.)</p>
+  <p>The Start Time Fair Queuing algorithm (STFQ, invented by researchers at UT
+  Austin) is a work conserving scheduler that partitions bandwidth fairly across
+  multiple streams. In this part of the project, you will subclass NWScheduler into
+  a STFQNWScheduler class. A detailed description of STFQ is <a href="http://www.cs.utexas.edu/users/dmcl/papers/ps/ToN-SFQ.ps">here</a>
+  for those who are interested (you do not need to read this paper to do this
+  project.)</p>
+
+  <p>A STFQ scheduler maintains a <i>virtual time</i>. Each buffer to be sent
+  has a <i>start tag</i> and a <i>finish tag</i>. Buffers are sent (or received)
+  in the increasing order of their start tags. STFQ defines how start tags,
+  finish tags, and virtual times are assigned.</p>
+  <ul>
+    <li>When <i>B<sub>f</sub></i><sup><i>i</i></sup>-- the <i>i</i>'th buffer
+      from stream <i>f</i> -- arrives, it is given a start tag <i>S<sub>f</sub><sup>i
+      </sup>= max(F<sub>f</sub><sup>i-1</sup>, currentVirtualTime)</i> where <i>F</i><i><sub>f</sub><sup>i-1</sup></i>
+      is the finish tag for buffer <i>i-1</i> of stream <i>f</i> (or <i>0 </i>if
+      <i>i == 0</i>) and <i>currentVirtualTime</i> is the current virtual time.</li>
+    <li>When <i>B<sub>f</sub></i><sup><i>i </i></sup>arrives, it is given the
+      finish tag <i>F<sub>f</sub><sup>i</sup></i> = <i>S<sub>f</sub><sup>i </sup>+
+      bufferSize<sub>f</sub><sup>i</sup>/weight<sub>f </sub></i>where <i>bufferSize<sub>f</sub><sup>i&nbsp;</sup></i>
+      is the size of the buffer being sent/received and <i>weight<sub>f&nbsp;</sub></i>
+      is the weight of stream <i>f</i>.</li>
+    <li>The scheduler has a fixed total bandwidth <i>maxBW</i>. When a buffer of
+      size <i>S</i> is sent at real (not virtual) time <i>t0</i>, the network is
+      <i>busy</i> from real time <i>t0</i> until real time<i> t1 = t0 + S/maxBW</i></li>
+    <li>Buffers are sent in order of their start tags. When the network is <i>busy</i>,
+      no new buffers are sent. When the network is not busy, the packet with the
+      next lowest start tag is sent (or if no buffers are waiting, the next
+      buffer to arrive is sent when it arrives.)</li>
+    <li>Initially, the virtual time is 0. If the network is <i>busy</i> the
+      virtual time is defined to be equal to the <i>start</i> tag of the buffer
+      that is currently being sent. If the network is not busy and no buffers
+      are waiting to be sent, then when the next buffer arrives, the virtual time
+      is set to the maximum&nbsp; <i>finish</i> tag of any buffer that has been sent.</li>
+  </ul>
+
+  <p>A ScheduledOutputStream-&gt;write() call should return when its buffer has
+  been sent.</p>
+
+  <p>To get some intuition for how this works, consider the case when there are
+  a bunch of streams using the network. In that case, each buffer from a given
+  stream is given a start time that is&nbsp; <i>size/weight</i> higher than the
+  previous buffer from that stream. If all streams start at the same virtual
+  time and have the same send sizes and weights, then each one will get a chance
+  to send at the current virtual time, then the virtual time will advance and
+  they will again each get a chance to send... If one stream's weight is twice that of
+  another, it will be allowed to send twice as many bytes as the other stream.
+  If two streams have the same weight and one stream sends a buffer that is
+  twice the size of the other's, it will have to wait twice as long before its
+  next buffer is sent. Also notice how the use of virtual time makes the
+  algorithm work conserving: if 10 streams with the same weight are all actively
+  sending, each gets 1/10 of the bandwidth. But if 8 of them stop, the remaining
+  two each get 1/2 of the bandwidth. The 'max' rule for assigning start tags and
+  the 'not busy' rule for assigning virtual times ensure that the &quot;right
+  thing&quot; happens when a flow or all flows switch between &quot;active&quot;
+  and &quot;idle&quot; modes. For example, if instead of the above rule, we
+  always set <i>S<sub>f</sub><sup>i </sup>= F<sub>f</sub><sup>i-1 </sup></i>then
+  a flow that was idle for a long time could start transmitting and monopolize
+  the network bandwidth until it &quot;caught up,&quot; which would give the
+  other flows bad performance for potentially long periods of time.</p>
+  <p>In part 3, you should do the following</p>
+  <ol>
+    <li>Create&nbsp; a STFQNWScheduler that extends NWScheduler and imposes the
+      scheduling rules listed above.</li>
+    <li>Run the tests specified in the makefile to generate plot3.pdf
+    and plot3b.pdf. Design, implment, and run some additional
+    tests. Look at the graphs and consider whether they make sense.
+    Comment on your tests and analysis in the report.</li>
+  </ol>
+  </blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">What to Turn
+In</font></nobr></b></td>
+</tr>
+</table>
+
+<blockquote>
+  <p>Electronically turn in (1) your well commented and elegant source code and
+  (2) a file called report.pdf or report.ps (in postscript or pdf format, not a
+  proprietary and platform-specific format such as .doc).
+<p>Your report.[.ps|pdf] file should include four sections:
+<ul>
+<li>
+Section 1: Administrative: your name, your eid, the number of slip
+days that you have used so far, the number of slip days you've used on
+this project, and the number of slip days you have remaining.
+</li>
+
+<li>
+Sections 2, 3, 4: A discussion of parts 1, 2, and 3 of your
+project. Each section should briefly discuss your high level design
+and any issues/known bugs in that part of the project. Then it should
+discuss your testing strategy and evaluation results, including
+graphs.
+</li>
+</ul>
+
+<p>If you <I>make report.pdf</I>, you will produce a skeleton report from
+report.tex (a latex file with text and formatting commands) and
+plot[1,1b,2,2b,3,3b].pdf. Feel free to update report.tex and add more
+graphs or to use a different editing program to produce your
+  report. (If you choose to do the latter, you probably want to
+  update the makefile to change or eliminate our rule for producing
+  report.pdf from report.tex.)</p>
+
+</blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Logistics</font></nobr></b></td>
+</tr>
+</table>
+<blockquote>
+<font color="#003300">The following guidelines should help
+smooth the process of delivering your project. You can help us a great
+deal by observing the following:</font>
+<ul>
+<li>
+<font color="#003300">After you finish your work, please
+use the </font><font color="#FF0000">turnin
+</font><font color="#000000">utility
+to submit your work.</font></li>
+
+<center><table WIDTH="60%" >
+<tr>
+<td>Usage:</td>
+
+<td>turnin --submit impjdi handin-372-labT <font color="#FF0000">your_files</font></td>
+</tr>
+</table></center>
+
+
+The Makefile targets handin.tar and handin automate this.
+
+<li>
+Do not include object files in your submission!! (Or core
+dumps!!!) (e.g., run "make clean" before turnin.)</li>
+
+<li>
+You <font color="#FF0000">must</font> use a Makefile to compile
+the program and produce an executable.</li>
+
+<li>
+The project will be graded on the public <B>Linux</B>&nbsp;
+cluster (run 'cshosts publinux' to get a list) In principle, the libraries you use are Posix compliant,
+so portability should not be a major issue if you develop on a different
+platform. (Although we did have some problems getting things to run
+cleanly on the Suns...). But, if you chose to develop on a different platform,
+porting and testing on Linux by the deadline is your responsibility. The
+statement &quot;it worked on my other machine&quot; will not be considered in
+the grading process in any way.</li>
+
+<li>
+Select reasonable names for your files and variables. This
+way, you make grading easier.</li>
+
+</ul>
+
+<ul>
+
+<li>
+Your files should never refer to absolute names. For example,
+to include foo.h, do not write:</li>
+
+<ul>&nbsp;&nbsp;<font color="#003300"> </font><font color="#000099">#include
+  &quot;/u/username/projects/proj1/foo.h&quot;&nbsp; /* poor style */</font></ul>
+
+<li>
+You are encouraged to reuse <i><font color="#990000">your
+own</font></i> code that you might have developed in previous courses to
+handle things such as queues, sorting, etc.</li>
+
+<li>
+You are also encouraged to use code provided by a public
+library such as the GNU library.</li>
+
+<li>
+You will work in two-person teams on this project. You may not look at the written work
+of any other student. This includes, for example, looking at another student's
+screen to help them debug, looking at another student's print-out, working with
+another student to sketch a high-level design on a white-board. See
+the syllabus for additional details.</li>
+
+
+<li>
+If you find that the problem is under specified, please make
+reasonable assumptions and document them in the documentation file.</li>
+
+<li>
+You are required to adhere to the multi-threaded coding standards/rules
+discussed in class and described in the hand out.</li>
+
+<li>
+Code will be evaluated based on its correctness, clarity,
+and elegance. Strive for simplicity. Think before you code.</li>
+</ul>
+</blockquote>
+
+<table BORDER=0 CELLSPACING=2 CELLPADDING=3 WIDTH="100%" hspace="4" >
+<tr BGCOLOR="#E0E0E8">
+<td WIDTH="100%"><b><nobr><font face="tahoma,arial,helvetica">Grading</font></nobr></b></td>
+</tr>
+</table>
+<blockquote>
+
+<p><font color="#330000">80% Code</font>
+<blockquote><font color="#330000">The most important factor
+in grading your code will be code inspection and evaluation of the descriptions
+in the write-ups. Remember, if your code does not follow the standards, it is
+  wrong. If your code is not clear and easy to understand, it is wrong.</font>
+<br><font color="#330000">The second most important factor
+in grading your code will be an evaluation of your testing strategy and
+the analysis of correctness in the write-ups.</font>
+<br><font color="#330000">We may also run our own tests.</font></blockquote>
+
+<blockquote><font color="#330000">30% part 1<br>
+  </font>30% part 2<br>
+  20% part 3
+<p><font color="#330000"><b>Hint</b>: One of the most common
+mistakes we see on projects year after year is using sthread_sleep() when
+you should be using scond_wait(). The handout discusses this issue in more
+detail.&nbsp; This year, I don't want anyone to make this mistake, so be
+warned: seeing an sthread_sleep in your code in the wrong place is an easy way for a TA to
+conclude that you don't know how to write multithreaded programs, and the
+TAs will be instructed to deduct a large number of points from any project
+that uses sleep() when it should wait() on a condition variable. If you
+find yourself writing sleep() other than the one place mentioned above, treat that as a red flag that you might be
+making a mistake.&nbsp; If you don't know when to use one and when to use
+the other, come to office hours, but don't start writing code!</font>
+<p><font color="#330000"><b>Hint</b>: Before writing any code, think of
+the types of simple generic data structures that we have discussed in class
+(e.g., bounded buffer, readers/writers, ...). These particular data structures
+may (or may not) be directly useful for this project, but this flavor of
+data structure will be extremely useful.&nbsp;</font></blockquote>
+<font color="#330000">20% Experiments &amp; Analysis</font>
+<blockquote><font color="#330000">Graphs and discussions of results and testing
+  strategy.</font></blockquote>
+
+<center>
+<p><br><b><blink><font color="#FF0000"><font size=+1>Start early, we mean
+it!!!</font></font></blink></b></center>
+
+</blockquote>
+
+</body>
+</html>
