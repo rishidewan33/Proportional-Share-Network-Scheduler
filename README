@@ -1,1 +1,3 @@
 This project is a Network Scheduler that implements concepts of multithreaded programming and synchronization through locks and condition variables.
+
+The methods that were primarily written were signalNextDeadline and waitMyTurn in MaxNWScheduler and STFQNWScheduler.
